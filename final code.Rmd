@@ -190,7 +190,7 @@ outlier <- which(data$subs_day3 > quantile(data$subs_day3, 0.985))
 outlier
 
 
-data[(min(outlier) - 10):(max(outlier) + 10), c("Date", day_0_variable, r_days)] %>%
+outleyrs_plot <- data[(min(outlier) - 10):(max(outlier) + 10), c("Date", day_0_variable, r_days)] %>%
   melt(id.vars = "Date") %>%
   ggplot(aes(x = Date, y = value)) +
   theme(text = element_text(size = 20)) +
@@ -308,13 +308,23 @@ ts.s <- seasadj(ts.stl) # de-seasonalize
 plot(ts.s)
 lines(tsData, col = "red")
 ```
+
+```{r}
+all_model_list <- list()
+all_model_list[["in sample"]] <- list()
+```
+
+
+
 ## Benchmark - intercept only
 ```{r}
+
 basic_model <- mean(subs_day3)
-MSE <- sqrt(mse(subs_day3, basic_model))
+RMSE <- sqrt(mse(subs_day3, basic_model))
+all_model_list[["in sample"]][["basic model"]] <- list(model = basic_model, RMSE = RMSE)
 
 ```
-When we try to explain subs_day3 with nothing but intercept our RMSE is `r MSE`
+When we try to explain subs_day3 with nothing but intercept our RMSE is `r RMSE`
 
 
 Linear regression (for comparison)
@@ -323,7 +333,8 @@ Linear regression (for comparison)
 lm <- lm(subs_day3 ~. , data = data[,variable(explanatory_variable,data)])
 summary(lm)
 
-sqrt(mse(subs_day3, lm$fitted.values))
+all_model_list[["in sample"]][["Linear Regression"]] <- list(model = lm, RMSE = sqrt(mse(subs_day3, lm$fitted.values)))
+
 ```
 
 
@@ -353,16 +364,22 @@ ts_model <- auto.arima(
 
 summary(ts_model)
 
-sqrt(mse(y = tsData, y.hat = fitted(ts_model)))
+all_model_list[["in sample"]][["Time-Series"]] <- list(model = ts_model, RMSE = sqrt(mse(y = tsData, y.hat = fitted(ts_model))))
+
 ```
 ## 5- FOLD CROSS VALIDATION
 
 We would like to use out-of-sample testing to get validation of our results, and understand how good our prediction model will be on new data set from the same data genrator prosess:
 
+```{r}
+all_model_list[["out of sample"]] <- list()
+```
+
+
 ### Basic CV
 ```{r}
 set.seed(9620)
-### LM
+all_model_list[["out of sample"]][["Fold CV"]] <- list()
 
 covariates_variable <-
   c(
@@ -392,16 +409,19 @@ for (i in 1:5) {
   y.train <- subs_day3[-testIndexes]
   y.test <- subs_day3[testIndexes]
   
+  
   basic_model <- mean(y.train)
   bm.cv.err[i] <- length(testIndexes) * mse(y.test, basic_model)
   bm <- (y.test - basic_model)^2
-  
+  all_model_list[["out of sample"]][["Fold CV"]][["basic model"]][[i]] <- list(Model = basic_model, MSE = mse(y.test, basic_model))
+
   
   newlm <-lm(y.train~., data = data[-testIndexes,lm_var_num])
   newpred <- forecast(object = newlm, newdata = data[testIndexes,lm_var_num])$mean
   
   lm.cv.err[i] <- length(testIndexes) * mse(y.test, newpred)
   lm <- (y.test - newpred)^2
+  all_model_list[["out of sample"]][["Fold CV"]][["Linear Regression"]][[i]] <- list(Model = newlm, MSE = mse(y.test, newpred))
   
   newts <- auto.arima(
   y = y.train,
@@ -409,6 +429,9 @@ for (i in 1:5) {
   newpred <- forecast(object = newts, xreg = as.matrix(data[testIndexes,ts_var_num]))$mean
   ts.cv.err[i] <- length(testIndexes) * mse(y.test, newpred)
   ts <- (y.test - newpred)^2
+  
+  all_model_list[["out of sample"]][["Fold CV"]][["Time-Series"]][[i]] <- list(Model = newts, MSE = mse(y.test, newpred))
+  
 }
 
 bm.cv.err <- sqrt(sum(bm.cv.err/length(folds)))
@@ -429,6 +452,8 @@ folds <- length_validation / 10
 lm.cv.err <- numeric(folds)
 ts.cv.err <- numeric(folds)
 
+all_model_list[["out of sample"]][["Expaning window CV"]] <- list()
+
 l_newlm <- list()
 
 for (i in 1:folds) {
@@ -442,18 +467,27 @@ for (i in 1:folds) {
   bm.cv.err[i] <- length(testIndexes) * mse(y.test, basic_model)
   bm <- (y.test - basic_model)^2
   
+  all_model_list[["out of sample"]][["Expaning window CV"]][["basic model"]][[i]] <- list(Model = basic_model, MSE = mse(y.test, basic_model))
+
+  
   l_newlm[[i]] <- lm(y.train~., data = data[trainIndexes,lm_var_num])$coefficients
   newlm <-lm(y.train~., data = data[trainIndexes,lm_var_num])
   newpred <- forecast(object = newlm, newdata = data[testIndexes,lm_var_num])$mean
   lm.cv.err[i] <- length(testIndexes) * mse(y.test, newpred)
   lm <- (y.test - newpred)^2
-  
+
+  all_model_list[["out of sample"]][["Expaning window CV"]][["Linear Regression"]][[i]] <- list(Model = newlm, MSE = mse(y.test, newpred))
+
+    
   newts <- auto.arima(
   y = y.train,
   xreg = as.matrix(data[trainIndexes,ts_var_num]))
   newpred <- forecast(object = newts, xreg = as.matrix(data[testIndexes,ts_var_num]))$mean
   ts.cv.err[i] <- length(testIndexes) * mse(y.test, newpred)
   ts <- (y.test - newpred)^2
+  
+  all_model_list[["out of sample"]][["Expaning window CV"]][["Time-Series"]][[i]] <- list(Model = newts, MSE = mse(y.test, newpred))
+
 }
 
 bm.cv.err <- sqrt(sum(bm.cv.err/length(folds)))
@@ -474,6 +508,9 @@ folds <- length_validation / 10
 lm.cv.err <- numeric(folds)
 ts.cv.err <- numeric(folds)
 
+all_model_list[["out of sample"]][["Rolling window CV"]][["Time-Series"]][[i]] <- list()
+
+
 for (i in 1:folds) {
   trainIndexes <- (1 + (10 * (i - 1))):((first - 1) + (10 * (i - 1)))
   testIndexes <- (first + (10 * (i - 1))):(first + (10 * i))
@@ -484,19 +521,27 @@ for (i in 1:folds) {
   basic_model <- mean(y.train)
   bm.cv.err[i] <- length(testIndexes) * mse(y.test, basic_model)
   bm <- (y.test - basic_model)^2
+
+  all_model_list[["out of sample"]][["Rolling window CV"]][["basic model"]][[i]] <- list(Model = basic_model, MSE = mse(y.test, basic_model))
   
   
   newlm <-lm(y.train~., data = data[trainIndexes,lm_var_num])
   newpred <- forecast(object = newlm, newdata = data[testIndexes,lm_var_num])$mean
   lm.cv.err[i] <- length(testIndexes) * mse(y.test, newpred)
   lm <- (y.test - newpred)^2
+
+  all_model_list[["out of sample"]][["Rolling window CV"]][["Linear Regression"]][[i]] <- list(Model = newlm, MSE = mse(y.test, newpred))
   
+    
   newts <- auto.arima(
   y = y.train,
   xreg = as.matrix(data[trainIndexes,ts_var_num]))
   newpred <- forecast(object = newts, xreg = as.matrix(data[testIndexes,ts_var_num]))$mean
   ts.cv.err[i] <- length(testIndexes) * mse(y.test, newpred)
   ts <- (y.test - newpred)^2
+  
+  all_model_list[["out of sample"]][["Rolling window CV"]][["Time-Series"]][[i]] <- list(Model = newts, MSE = mse(y.test, newpred))
+  
 }
 
 bm.cv.err <- sqrt(sum(bm.cv.err/length(folds)))
