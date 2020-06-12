@@ -1,0 +1,565 @@
+---
+title: "lightricks - Code 5"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE,
+                      message = FALSE,
+                      warning = FALSE)
+
+packages <-
+  c(
+    "readr",
+    "corrplot",
+    "ggplot2",
+    "formattable",
+    "grid",
+    "gridExtra",
+    "knitr",
+    "purrr",
+    "tidyr",
+    "kableExtra",
+    "reshape2",
+    "lawstat",
+    "splines",
+    "Ecdat",
+    "tscount",
+    "MASS",
+    "forecast",
+    "plyr",
+    "lubridate",
+    "forcats",
+    "glmnet"
+  )
+
+
+new.pkg <-
+  packages[!(packages %in% installed.packages()[, "Package"])]
+if (length(new.pkg))
+  install.packages(new.pkg, dependencies = TRUE)
+sapply(packages, require, character.only = TRUE)
+
+rm(packages, new.pkg)
+
+mse <- function(y,y.hat){
+  mean((y - y.hat)^2)
+}
+
+variable <- function(var, data){
+  which(names(data) %in% var)
+}
+
+```
+
+## Reading Data
+```{r reading data}
+#Sapir
+try(data <-
+  as.data.frame(
+    read_csv(
+      "C:/Users/User/drive_sapir/university/MA/lightricks/insight/Huji_data_Organic_FT2_Encryption_05_Apr_2020.csv",
+      col_types = cols(Date = col_date(format = "%Y-%m-%d"), X1 = col_skip())
+    )
+  )
+)
+
+#Sapir
+try(data <-
+  as.data.frame(
+    read_csv(
+      "C:/Users/sapir/Google Drive/university/MA/lightricks/final/Huji_data_Organic_FT2_Encryption_05_Apr_2020.csv",
+      col_types = cols(Date = col_date(format = "%Y-%m-%d"), X1 = col_skip())
+    )
+  )
+)
+
+#Carlynn
+try(data <-
+  as.data.frame(
+    read_csv(
+      "C:/Users/Carlynn/Desktop/LIGHTRICKS/Huji_data_Organic_FT2_Encryption_05_Apr_2020.csv",
+      col_types = cols(Date = col_date(format = "%Y-%m-%d"), X1 = col_skip())
+    )
+  )
+)
+
+data$subs_day0 <-
+  data$total_monthly_day0 + data$total_yearly_day0 + data$total_otp_day0
+
+#check of sub day 0
+if (!all(data$subs_day0 <= data$subs_day1)) {
+  warning("Subs day 0 is bigger then sub day 1 ")
+}
+
+#removing data befor "d" day
+d_day <- as.Date("2018-10-22")
+data <- subset(data, data$Date >= d_day)
+
+day_0_variable <-
+  c(
+    #Spend (in $) on that date
+    "all_spend",
+    
+    #all population
+    "total_installs_day0",
+    
+    #include monthly subs day, yearly subs and otp on day Date
+    "subs_day0",
+    
+    #number of monthly subscribers on day Date
+    "total_monthly_day0",
+    
+    #number of yearly subscribers on day Date
+    "total_yearly_day0",
+    
+    #number of one-time payment subscribers on day Date
+    "total_otp_day0",
+    
+    #num of users that trial of monthly subscription
+    "monthly_trials_day0",
+    
+    #num of users that trial of yearly subscription
+    "yearly_trials_day0",
+    
+    #num of users who pressed the auto-renewal off button on day Date
+    "auto_off_day0",
+    
+    #  ~ (monthly subs * 5.99 + yearly subs * 35.99 + otp * 69.99 )*0.7
+    "revenue_of_day0"
+  )
+
+subs_variable <-
+  c(
+    "subs_day1",
+    "subs_day2",
+    "subs_day3",
+    "subs_day4",
+    "subs_day5",
+    "subs_day6",
+    "subs_day7",
+    "subs_day28"
+  )
+
+revenue_variable <-
+  c(
+    "revenue_of_day1",
+    "revenue_of_day2",
+    "revenue_of_day3",
+    "revenue_of_day4",
+    "revenue_of_day5",
+    "revenue_of_day6",
+    "revenue_of_day7",
+    "revenue_of_day28"
+  )
+
+r_days <- c(
+  "subs_day3",
+  "subs_day7",
+  "subs_day28",
+  "revenue_of_day3",
+  "revenue_of_day7",
+  "revenue_of_day28"
+)
+
+#clearing subs day 0 from all other days - subs variable will be accumulate (per observation) since day 1
+data[, subs_variable] <- data[, subs_variable] - data[, "subs_day0"]
+
+#clearing revenue day 0 from all other days - revenue variable will be accumulate (per observation) since day 1
+data[, revenue_variable] <-
+  data[, revenue_variable] - data[, "revenue_of_day0"]
+
+```
+
+## Dealing with outleyrs
+When we look at the data that we left we can see that there are few days that are really unusual, we decide to smooth them by using the average of that day of the week a week before and a week later.
+```{r fig.height=10, fig.width=17}
+outlier <- which(data$subs_day3 > quantile(data$subs_day3, 0.985))
+outlier
+
+
+data[(min(outlier) - 10):(max(outlier) + 10), c("Date", day_0_variable, r_days)] %>%
+  melt(id.vars = "Date") %>%
+  ggplot(aes(x = Date, y = value)) +
+  theme(text = element_text(size = 20)) +
+  facet_wrap(~ variable, scales = "free") +
+  geom_point() +
+  geom_vline(xintercept = data$Date[min(outlier)], color = "red") +
+  geom_vline(xintercept = data$Date[max(outlier)], color = "red")
+
+data[outlier, -26] <-
+  (data[outlier - 7, -26] + data[outlier + 7, -26]) /
+  2
+```
+
+
+
+```{r adding dates data and lags, fig.height=10, fig.width=17}
+data$day  <-  wday(data$Date)
+data$month <- month(data$Date)
+data$week <- week(data$Date)
+data$year = 1 * (year(data$Date) == 2019)
+data$summer = 1*(data$month %in% 8:11)
+
+data$weekend <- ifelse(data$day %in% c(6, 7, 1) , 1, 0)
+
+lag_1 <- data$subs_day3[-length(data$subs_day3)] - data$subs_day3[-1]
+data$lag_1 <- c(lag_1[1], lag_1)
+
+lag_2 <- data$subs_day3[-c(length(data$subs_day3)-1:0)] - data$subs_day3[-c(1:2)]
+data$lag_2 <- c(lag_2[1],lag_2[1], lag_2)
+
+lag_3 <- data$subs_day3[-c(length(data$subs_day3)-2:0)] - data$subs_day3[-c(1:3)]
+data$lag_3 <- c(lag_3[1],lag_3[1],lag_3[1], lag_3)
+
+rm(lag_1, lag_2, lag_3, outlier)
+
+explanatory_variable <-
+  c(
+    "lag_1",
+    "lag_2",
+    "lag_3",
+    "total_monthly_day0",
+    "total_yearly_day0",
+    "total_otp_day0",
+    "monthly_trials_day0",
+    "yearly_trials_day0",
+    "all_spend",
+    "auto_off_day0",
+    "total_installs_day0",
+    "weekend",
+    "year"
+  )
+
+data <- data[-c(1:3),]
+
+attach(data)
+```
+
+
+## Time series
+When we examine our data we can see repetitiveness in the weekly level and in more high level. therefore we decide to check time searise.
+We used a weekly model as a start. this id the decompose model:
+```{r}
+## Time serie
+tsData <-
+  ts(
+    data = data$subs_day3,
+    start = data$Date[1],
+    frequency = 7
+  )
+plot(tsData)
+decomposedRes <- decompose(tsData)
+plot(decomposedRes)
+```
+
+Now we would like to see which of our variable is the best way to explain the trend:
+```{r}
+cor(y = decomposedRes$trend[which(!is.na(decomposedRes$trend))], x = data[which(!is.na(decomposedRes$trend)), c(day_0_variable)])
+
+data.frame(
+  trend = decomposedRes$trend,
+  all_spend = data$all_spend,
+  auto = data$auto_off_day0
+)[which(!is.na(decomposedRes$trend)), ] %>%
+  lm(formula = trend ~ all_spend + I(all_spend ^ 2)) %>%
+  summary()
+```
+
+This may be a very good way to explain the trend, but not so much for other parts of sub day 3:
+
+```{r}
+summary(lm(
+  data = data,
+  formula = subs_day3 ~ all_spend + I(all_spend ^ 2)
+))
+```
+
+Now we would like to remove the seasonality part and try to explain the other part of sub day 3.
+```{r}
+cor(y = decomposedRes$seasonal, x = data[, c(day_0_variable)])
+
+cor(
+  y = decomposedRes$seasonal,
+  x = data.frame(
+    day = wday(data$Date),
+    month = month(data$Date),
+    week = week(data$Date),
+    year = year(data$Date)
+  )
+)
+
+# remove seasonnality
+ts.stl <- stl(tsData, "periodic")
+ts.s <- seasadj(ts.stl) # de-seasonalize
+plot(ts.s)
+lines(tsData, col = "red")
+```
+## Benchmark - intercept only
+```{r}
+basic_model <- mean(subs_day3)
+MSE <- sqrt(mse(subs_day3, basic_model))
+
+```
+When we try to explain subs_day3 with nothing but intercept our RMSE is `r MSE`
+
+
+Linear regression (for comparison)
+```{r}
+#### LINEAR REGRESSION
+lm <- lm(subs_day3 ~. , data = data[,variable(explanatory_variable,data)])
+summary(lm)
+
+sqrt(mse(subs_day3, lm$fitted.values))
+```
+
+
+We try auto arima model on sub day 3, using ts, 1 day lag, and covariates:
+```{r}
+#### TSGLM
+covariates <-
+    cbind(
+      total_monthly_day0,
+      total_yearly_day0,  
+      total_otp_day0, 
+      monthly_trials_day0, 
+      yearly_trials_day0,
+      all_spend,
+      auto_off_day0,
+      total_installs_day0#, 
+      #weekend,
+      #year
+    )
+
+  
+
+ts_model <- auto.arima(
+  y = tsData,
+  xreg = covariates
+)
+
+summary(ts_model)
+
+sqrt(mse(y = tsData, y.hat = fitted(ts_model)))
+```
+## 5- FOLD CROSS VALIDATION
+
+We would like to use out-of-sample testing to get validation of our results, and understand how good our prediction model will be on new data set from the same data genrator prosess:
+
+### Basic CV
+```{r}
+set.seed(9620)
+### LM
+
+covariates_variable <-
+  c(
+    "total_monthly_day0",
+    "total_yearly_day0",
+    "total_otp_day0",
+    "monthly_trials_day0",
+    "yearly_trials_day0",
+    "all_spend",
+    "auto_off_day0",
+    "total_installs_day0",
+    "year"
+  )
+
+
+folds <- cut(seq(1, nrow(data)), breaks = 5, labels = FALSE)
+bm.cv.err <- numeric(5)
+lm.cv.err <- numeric(5)
+ts.cv.err <- numeric(5)
+
+lm_var_num <- variable(explanatory_variable, data)
+ts_var_num <- variable(covariates_variable, data)
+
+for (i in 1:5) {
+  testIndexes <- which(folds == i, arr.ind = TRUE)
+  
+  y.train <- subs_day3[-testIndexes]
+  y.test <- subs_day3[testIndexes]
+  
+  basic_model <- mean(y.train)
+  bm.cv.err[i] <- length(testIndexes) * mse(y.test, basic_model)
+  bm <- (y.test - basic_model)^2
+  
+  
+  newlm <-lm(y.train~., data = data[-testIndexes,lm_var_num])
+  newpred <- forecast(object = newlm, newdata = data[testIndexes,lm_var_num])$mean
+  
+  lm.cv.err[i] <- length(testIndexes) * mse(y.test, newpred)
+  lm <- (y.test - newpred)^2
+  
+  newts <- auto.arima(
+  y = y.train,
+  xreg = as.matrix(data[-testIndexes,ts_var_num]))
+  newpred <- forecast(object = newts, xreg = as.matrix(data[testIndexes,ts_var_num]))$mean
+  ts.cv.err[i] <- length(testIndexes) * mse(y.test, newpred)
+  ts <- (y.test - newpred)^2
+}
+
+bm.cv.err <- sqrt(sum(bm.cv.err/length(folds)))
+lm.cv.err <- sqrt(sum(lm.cv.err/length(folds)))
+ts.cv.err <- sqrt(sum(ts.cv.err/length(folds)))
+```
+
+We compare cv rmse and get much better results for lm `r round(lm.cv.err, 2)` then for ts `r round(ts.cv.err, 2)` (while the benchmark is: `r round(bm.cv.err, 2)`).
+But what is the meaning of that compare? what is the meaning of ts when there is a hole in the middle of our series?
+
+We try other cv method that is more reasonable for ts:
+
+### Expaning window CV
+```{r}
+length_validation <- 60
+first <- nrow(data) - length_validation
+folds <- length_validation / 10
+lm.cv.err <- numeric(folds)
+ts.cv.err <- numeric(folds)
+
+l_newlm <- list()
+
+for (i in 1:folds) {
+  trainIndexes <- 1:((first - 1) + (10 * (i - 1)))
+  testIndexes <- (first + (10 * (i - 1))):(first + (10 * i))
+  
+  y.train <- subs_day3[trainIndexes]
+  y.test <- subs_day3[testIndexes]
+  
+  basic_model <- mean(y.train)
+  bm.cv.err[i] <- length(testIndexes) * mse(y.test, basic_model)
+  bm <- (y.test - basic_model)^2
+  
+  l_newlm[[i]] <- lm(y.train~., data = data[trainIndexes,lm_var_num])$coefficients
+  newlm <-lm(y.train~., data = data[trainIndexes,lm_var_num])
+  newpred <- forecast(object = newlm, newdata = data[testIndexes,lm_var_num])$mean
+  lm.cv.err[i] <- length(testIndexes) * mse(y.test, newpred)
+  lm <- (y.test - newpred)^2
+  
+  newts <- auto.arima(
+  y = y.train,
+  xreg = as.matrix(data[trainIndexes,ts_var_num]))
+  newpred <- forecast(object = newts, xreg = as.matrix(data[testIndexes,ts_var_num]))$mean
+  ts.cv.err[i] <- length(testIndexes) * mse(y.test, newpred)
+  ts <- (y.test - newpred)^2
+}
+
+bm.cv.err <- sqrt(sum(bm.cv.err/length(folds)))
+lm.cv.err <- sqrt(sum(lm.cv.err/length(folds)))
+ts.cv.err <- sqrt(sum(ts.cv.err/length(folds)))
+
+```
+
+still getting a much better result in lm `r round(lm.cv.err, 2)` then for ts `r round(ts.cv.err, 2)` (benchmark is: `r round(bm.cv.err, 2)`).
+
+last we try rolling window cv:
+
+### Rolling window CV
+```{r}
+length_validation <- 60
+first <- nrow(data) - length_validation
+folds <- length_validation / 10
+lm.cv.err <- numeric(folds)
+ts.cv.err <- numeric(folds)
+
+for (i in 1:folds) {
+  trainIndexes <- (1 + (10 * (i - 1))):((first - 1) + (10 * (i - 1)))
+  testIndexes <- (first + (10 * (i - 1))):(first + (10 * i))
+  
+  y.train <- subs_day3[trainIndexes]
+  y.test <- subs_day3[testIndexes]
+  
+  basic_model <- mean(y.train)
+  bm.cv.err[i] <- length(testIndexes) * mse(y.test, basic_model)
+  bm <- (y.test - basic_model)^2
+  
+  
+  newlm <-lm(y.train~., data = data[trainIndexes,lm_var_num])
+  newpred <- forecast(object = newlm, newdata = data[testIndexes,lm_var_num])$mean
+  lm.cv.err[i] <- length(testIndexes) * mse(y.test, newpred)
+  lm <- (y.test - newpred)^2
+  
+  newts <- auto.arima(
+  y = y.train,
+  xreg = as.matrix(data[trainIndexes,ts_var_num]))
+  newpred <- forecast(object = newts, xreg = as.matrix(data[testIndexes,ts_var_num]))$mean
+  ts.cv.err[i] <- length(testIndexes) * mse(y.test, newpred)
+  ts <- (y.test - newpred)^2
+}
+
+bm.cv.err <- sqrt(sum(bm.cv.err/length(folds)))
+lm.cv.err <- sqrt(sum(lm.cv.err/length(folds)))
+ts.cv.err <- sqrt(sum(ts.cv.err/length(folds)))
+
+```
+
+We got RMSE for lm `r round(lm.cv.err, 2)` and for ts `r round(ts.cv.err, 2)` (benchmark is: `r round(bm.cv.err, 2)`).
+
+
+## SO WE DON'T HAVE NOTHING TO DO WITH TS!!! :(
+
+## INTERRACTIONS + SQUARE
+```{r INTERRACTIONS + SQUARE}
+## INTERRACTIONS + SQUARE
+
+data_square <- data[, explanatory_variable] ^ 2
+colnames(data_square) <- paste0("square_", colnames(data_square))
+data_interactions <- data.frame(model.matrix(subs_day3 ~ . ^ 2, data = data[, explanatory_variable]))
+
+data_extended <- data.frame(subs_day3, data_interactions, data_square)
+
+```
+
+
+```{r AIC_selection}
+reg <- lm(formula = subs_day3 ~ ., data = data_extended)
+AIC_selection = stepAIC(reg, direction = "backward",trace=0)
+reg_after_AIC <-
+  lm(formula = paste0("subs_day3 ~", paste(
+    names(AIC_selection$coefficients)[-1], collapse = "+")), data = data_extended)
+summary(reg_after_AIC)
+
+sqrt(mse(subs_day3, reg_after_AIC$fitted.values))
+
+```
+
+
+```{r}
+# Load libraries, get data & set seed for reproducibility ---------------------
+set.seed(123)    # seef for reproducibility
+
+y <- subs_day3 %>% as.matrix()
+X <- data.frame(data_interactions, data_square) %>% as.matrix()
+
+
+# Perform 10-fold cross-validation to select lambda ---------------------------
+lambdas_to_try <- 10^seq(0, 15, length.out = 100)
+# Setting alpha = 0 implements ridge regression
+ridge_cv <- cv.glmnet(X, y, alpha = 0, lambda = lambdas_to_try,
+                      standardize = FALSE, nfolds = 5)
+# Plot cross-validation results
+plot(ridge_cv)
+
+ridge_model <- glmnet(X, y, alpha = 0, lambda = ridge_cv$lambda.min)
+sqrt(mse(predict.glmnet(ridge_model, newx = X), subs_day3))
+
+
+lasso_cv <- cv.glmnet(X, y, alpha = 1, lambda = lambdas_to_try,
+                      standardize = FALSE, nfolds = 5)
+# Plot cross-validation results
+plot(lasso_cv)
+
+lasso_model <- glmnet(X, y, alpha = 1, lambda = lasso_cv$lambda.min)
+sqrt(mse(predict.glmnet(lasso_model, newx = X), subs_day3))
+
+
+mixed_cv <- cv.glmnet(X, y, alpha = 0.5, lambda = lambdas_to_try,
+                      standardize = FALSE, nfolds = 5)
+# Plot cross-validation results
+plot(mixed_cv)
+
+mixed_model <- glmnet(X, y, alpha = 0.5, lambda = mixed_cv$lambda.min)
+sqrt(mse(predict.glmnet(mixed_model, newx = X), subs_day3))
+
+```
+
