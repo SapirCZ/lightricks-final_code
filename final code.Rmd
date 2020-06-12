@@ -581,13 +581,36 @@ sqrt(mse(subs_day3, reg_after_AIC$fitted.values))
 ```
 
 ```{r PCA for betta}
-X <- data.frame(data_interactions[,-1], data_square) %>% scale(center = TRUE, scale = TRUE) %>% as.matrix()
-  
-  pca <- prcomp(X)
+
+set.seed(12620)
+pca_size <- 0.2
+train_size <- 0.5
+test_size <- 0.3
+
+allocation <- sample(x = c("pca", "train", "test"), size = nrow(data_interactions), replace = TRUE, prob = c(pca_size, train_size, test_size))
+table(allocation)
+X <- data_interactions[,-1] %>% scale(center = TRUE, scale = TRUE) %>% as.data.frame()
+
+y <- subs_day3 %>% scale(center = TRUE, scale = TRUE)
+
+x <- X[which(allocation == "pca"),] %>% as.matrix()
+  pca <- prcomp(x)
   betta <- abs(pca$x[1,])
-  reg_pca <- lm(formula = subs_day3 ~ ., data = data_interactions[,-1][,which(betta > 0.15)])
-  newpred <- forecast(object = reg_pca, newdata = data_interactions[,-1][,which(betta > 0.15)])$mean
-  sqrt(mse(subs_day3, newpred))
+
+x <- X[which(allocation == "train"),which(betta > 0.15)]
+  data_for_pca <- data_interactions[,-1][which(allocation == "train"),which(betta > 0.15)]
+  
+  
+  reg_pca <- lm(formula = subs_day3[which(allocation == "train")] ~ ., data = data_for_pca)
+  
+  reg_pca_scaled <- lm(formula = y[which(allocation == "train")] ~ ., data = x)
+  
+  sort(abs(reg_pca_scaled$coefficients))
+  
+  data_for_pca <- data_interactions[,-1][which(allocation == "test"),which(betta > 0.15)]
+  
+  newpred <- forecast(object = reg_pca, newdata = data_for_pca)$mean
+  sqrt(mse(subs_day3[which(allocation == "test")], newpred))
 
   
 ```
