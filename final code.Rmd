@@ -231,9 +231,9 @@ rm(lag_3, lag_4, lag_5, outlier)
 
 explanatory_variable <-
   c(
-    "lag_1",
-    "lag_2",
     "lag_3",
+    "lag_4",
+    "lag_5",
     "total_monthly_day0",
     "total_yearly_day0",
     "total_otp_day0",
@@ -321,7 +321,7 @@ all_model_list[["in sample"]] <- list()
 
 basic_model <- mean(subs_day3)
 RMSE <- sqrt(mse(subs_day3, basic_model))
-all_model_list[["in sample"]][["basic model"]] <- list(model = basic_model, RMSE = RMSE)
+all_model_list[["in sample"]][["basic model"]] <- list(model = basic_model, RMSE = RMSE, residuals = subs_day3 -  basic_model)
 
 ```
 When we try to explain subs_day3 with nothing but intercept our RMSE is `r RMSE`
@@ -333,7 +333,7 @@ Linear regression (for comparison)
 lm <- lm(subs_day3 ~. , data = data[,variable(explanatory_variable,data)])
 summary(lm)
 
-all_model_list[["in sample"]][["Linear Regression"]] <- list(model = lm, RMSE = sqrt(mse(subs_day3, lm$fitted.values)))
+all_model_list[["in sample"]][["Linear Regression"]] <- list(model = lm, RMSE = sqrt(mse(subs_day3, lm$fitted.values)), residuals = subs_day3 -  lm$fitted.values)
 
 ```
 
@@ -364,7 +364,7 @@ ts_model <- auto.arima(
 
 summary(ts_model)
 
-all_model_list[["in sample"]][["Time-Series"]] <- list(model = ts_model, RMSE = sqrt(mse(y = tsData, y.hat = fitted(ts_model))))
+all_model_list[["in sample"]][["Time-Series"]] <- list(model = ts_model, RMSE = sqrt(mse(y = tsData, y.hat = fitted(ts_model))), residuals = subs_day3 -  fitted(ts_model))
 
 ```
 ## 5- FOLD CROSS VALIDATION
@@ -412,25 +412,25 @@ for (i in 1:5) {
   
   basic_model <- mean(y.train)
   bm.cv.err[i] <- length(testIndexes) * mse(y.test, basic_model)
-  bm <- (y.test - basic_model)^2
-  all_model_list[["out of sample"]][["Fold CV"]][["basic model"]][[i]] <- list(Model = basic_model, MSE = mse(y.test, basic_model))
+  bm <- (y.test - basic_model)
+  all_model_list[["out of sample"]][["Fold CV"]][["basic model"]][[i]] <- list(Model = basic_model, MSE = mse(y.test, basic_model), residuals = bm)
 
   
   newlm <-lm(y.train~., data = data[-testIndexes,lm_var_num])
   newpred <- forecast(object = newlm, newdata = data[testIndexes,lm_var_num])$mean
   
   lm.cv.err[i] <- length(testIndexes) * mse(y.test, newpred)
-  lm <- (y.test - newpred)^2
-  all_model_list[["out of sample"]][["Fold CV"]][["Linear Regression"]][[i]] <- list(Model = newlm, MSE = mse(y.test, newpred))
+  lm <- (y.test - newpred)
+  all_model_list[["out of sample"]][["Fold CV"]][["Linear Regression"]][[i]] <- list(Model = newlm, MSE = mse(y.test, newpred), residuals = lm)
   
   newts <- auto.arima(
   y = y.train,
   xreg = as.matrix(data[-testIndexes,ts_var_num]))
   newpred <- forecast(object = newts, xreg = as.matrix(data[testIndexes,ts_var_num]))$mean
   ts.cv.err[i] <- length(testIndexes) * mse(y.test, newpred)
-  ts <- (y.test - newpred)^2
+  ts <- (y.test - newpred)
   
-  all_model_list[["out of sample"]][["Fold CV"]][["Time-Series"]][[i]] <- list(Model = newts, MSE = mse(y.test, newpred))
+  all_model_list[["out of sample"]][["Fold CV"]][["Time-Series"]][[i]] <- list(Model = newts, MSE = mse(y.test, newpred), residuals = ts)
   
 }
 
@@ -465,18 +465,18 @@ for (i in 1:folds) {
   
   basic_model <- mean(y.train)
   bm.cv.err[i] <- length(testIndexes) * mse(y.test, basic_model)
-  bm <- (y.test - basic_model)^2
+  bm <- (y.test - basic_model)
   
-  all_model_list[["out of sample"]][["Expaning window CV"]][["basic model"]][[i]] <- list(Model = basic_model, MSE = mse(y.test, basic_model))
+  all_model_list[["out of sample"]][["Expaning window CV"]][["basic model"]][[i]] <- list(Model = basic_model, MSE = mse(y.test, basic_model), residuals = bm)
 
   
   l_newlm[[i]] <- lm(y.train~., data = data[trainIndexes,lm_var_num])$coefficients
   newlm <-lm(y.train~., data = data[trainIndexes,lm_var_num])
   newpred <- forecast(object = newlm, newdata = data[testIndexes,lm_var_num])$mean
   lm.cv.err[i] <- length(testIndexes) * mse(y.test, newpred)
-  lm <- (y.test - newpred)^2
+  lm <- (y.test - newpred)
 
-  all_model_list[["out of sample"]][["Expaning window CV"]][["Linear Regression"]][[i]] <- list(Model = newlm, MSE = mse(y.test, newpred))
+  all_model_list[["out of sample"]][["Expaning window CV"]][["Linear Regression"]][[i]] <- list(Model = newlm, MSE = mse(y.test, newpred), residuals = lm)
 
     
   newts <- auto.arima(
@@ -484,9 +484,9 @@ for (i in 1:folds) {
   xreg = as.matrix(data[trainIndexes,ts_var_num]))
   newpred <- forecast(object = newts, xreg = as.matrix(data[testIndexes,ts_var_num]))$mean
   ts.cv.err[i] <- length(testIndexes) * mse(y.test, newpred)
-  ts <- (y.test - newpred)^2
+  ts <- (y.test - newpred)
   
-  all_model_list[["out of sample"]][["Expaning window CV"]][["Time-Series"]][[i]] <- list(Model = newts, MSE = mse(y.test, newpred))
+  all_model_list[["out of sample"]][["Expaning window CV"]][["Time-Series"]][[i]] <- list(Model = newts, MSE = mse(y.test, newpred), residuals = ts)
 
 }
 
@@ -520,17 +520,17 @@ for (i in 1:folds) {
   
   basic_model <- mean(y.train)
   bm.cv.err[i] <- length(testIndexes) * mse(y.test, basic_model)
-  bm <- (y.test - basic_model)^2
+  bm <- (y.test - basic_model)
 
-  all_model_list[["out of sample"]][["Rolling window CV"]][["basic model"]][[i]] <- list(Model = basic_model, MSE = mse(y.test, basic_model))
+  all_model_list[["out of sample"]][["Rolling window CV"]][["basic model"]][[i]] <- list(Model = basic_model, MSE = mse(y.test, basic_model), residuals = bm)
   
   
   newlm <-lm(y.train~., data = data[trainIndexes,lm_var_num])
   newpred <- forecast(object = newlm, newdata = data[testIndexes,lm_var_num])$mean
   lm.cv.err[i] <- length(testIndexes) * mse(y.test, newpred)
-  lm <- (y.test - newpred)^2
+  lm <- (y.test - newpred)
 
-  all_model_list[["out of sample"]][["Rolling window CV"]][["Linear Regression"]][[i]] <- list(Model = newlm, MSE = mse(y.test, newpred))
+  all_model_list[["out of sample"]][["Rolling window CV"]][["Linear Regression"]][[i]] <- list(Model = newlm, MSE = mse(y.test, newpred), residuals = lm)
   
     
   newts <- auto.arima(
@@ -538,9 +538,9 @@ for (i in 1:folds) {
   xreg = as.matrix(data[trainIndexes,ts_var_num]))
   newpred <- forecast(object = newts, xreg = as.matrix(data[testIndexes,ts_var_num]))$mean
   ts.cv.err[i] <- length(testIndexes) * mse(y.test, newpred)
-  ts <- (y.test - newpred)^2
+  ts <- (y.test - newpred)
   
-  all_model_list[["out of sample"]][["Rolling window CV"]][["Time-Series"]][[i]] <- list(Model = newts, MSE = mse(y.test, newpred))
+  all_model_list[["out of sample"]][["Rolling window CV"]][["Time-Series"]][[i]] <- list(Model = newts, MSE = mse(y.test, newpred), residuals = ts)
   
 }
 
@@ -579,6 +579,19 @@ summary(reg_after_AIC)
 sqrt(mse(subs_day3, reg_after_AIC$fitted.values))
 
 ```
+
+```{r PCA for betta}
+X <- data.frame(data_interactions[,-1], data_square) %>% scale(center = TRUE, scale = TRUE) %>% as.matrix()
+  
+  pca <- prcomp(X)
+  betta <- abs(pca$x[1,])
+  reg_pca <- lm(formula = subs_day3 ~ ., data = data_interactions[,-1][,which(betta > 0.15)])
+  newpred <- forecast(object = reg_pca, newdata = data_interactions[,-1][,which(betta > 0.15)])$mean
+  sqrt(mse(subs_day3, newpred))
+
+  
+```
+
 
 
 ```{r}
