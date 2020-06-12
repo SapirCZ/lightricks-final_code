@@ -612,6 +612,7 @@ x <- X[which(allocation == "train"),which(betta > 0.15)]
   newpred <- forecast(object = reg_pca, newdata = data_for_pca)$mean
   sqrt(mse(subs_day3[which(allocation == "test")], newpred))
 
+  final_model <- list(data_for_pca, RMSE = sqrt(mse(subs_day3[which(allocation == "test")], newpred)), residuals = subs_day3[which(allocation == "test")] - newpred, scaled_coefficients = sort(abs(reg_pca_scaled$coefficients)))
   
 ```
 
