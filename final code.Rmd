@@ -55,6 +55,17 @@ variable <- function(var, data){
 
 ## Reading Data
 ```{r reading data}
+#maayan
+try(data <-
+  as.data.frame(
+    read_csv(
+      "C:/Users/maaya/Documents/lightricks/Huji_data_Organic_FT2.csv",
+      col_types = cols(Date = col_date(format = "%Y-%m-%d"), X1 = col_skip())
+    )
+  )
+)
+
+
 #Sapir
 try(data <-
   as.data.frame(
