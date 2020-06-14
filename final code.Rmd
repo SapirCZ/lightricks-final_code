@@ -322,6 +322,7 @@ all_model_list[["in sample"]] <- list()
 basic_model <- mean(subs_day3)
 RMSE <- sqrt(mse(subs_day3, basic_model))
 all_model_list[["in sample"]][["basic model"]] <- list(model = basic_model, RMSE = RMSE, residuals = subs_day3 -  basic_model)
+RMSE
 
 ```
 When we try to explain subs_day3 with nothing but intercept our RMSE is `r RMSE`
@@ -334,7 +335,7 @@ lm <- lm(subs_day3 ~. , data = data[,variable(explanatory_variable,data)])
 summary(lm)
 
 all_model_list[["in sample"]][["Linear Regression"]] <- list(model = lm, RMSE = sqrt(mse(subs_day3, lm$fitted.values)), residuals = subs_day3 -  lm$fitted.values)
-
+sqrt(mse(subs_day3, lm$fitted.values))
 ```
 
 
@@ -365,7 +366,7 @@ ts_model <- auto.arima(
 summary(ts_model)
 
 all_model_list[["in sample"]][["Time-Series"]] <- list(model = ts_model, RMSE = sqrt(mse(y = tsData, y.hat = fitted(ts_model))), residuals = subs_day3 -  fitted(ts_model))
-
+sqrt(mse(y = tsData, y.hat = fitted(ts_model)))
 ```
 ## 5- FOLD CROSS VALIDATION
 
@@ -414,7 +415,7 @@ for (i in 1:5) {
   bm.cv.err[i] <- length(testIndexes) * mse(y.test, basic_model)
   bm <- (y.test - basic_model)
   all_model_list[["out of sample"]][["Fold CV"]][["basic model"]][[i]] <- list(Model = basic_model, MSE = mse(y.test, basic_model), residuals = bm)
-
+mse(y.test, basic_model)
   
   newlm <-lm(y.train~., data = data[-testIndexes,lm_var_num])
   newpred <- forecast(object = newlm, newdata = data[testIndexes,lm_var_num])$mean
@@ -422,7 +423,8 @@ for (i in 1:5) {
   lm.cv.err[i] <- length(testIndexes) * mse(y.test, newpred)
   lm <- (y.test - newpred)
   all_model_list[["out of sample"]][["Fold CV"]][["Linear Regression"]][[i]] <- list(Model = newlm, MSE = mse(y.test, newpred), residuals = lm)
-  
+mse(y.test, newpred)
+
   newts <- auto.arima(
   y = y.train,
   xreg = as.matrix(data[-testIndexes,ts_var_num]))
@@ -431,6 +433,7 @@ for (i in 1:5) {
   ts <- (y.test - newpred)
   
   all_model_list[["out of sample"]][["Fold CV"]][["Time-Series"]][[i]] <- list(Model = newts, MSE = mse(y.test, newpred), residuals = ts)
+  mse(y.test, newpred)
   
 }
 
