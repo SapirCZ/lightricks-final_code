@@ -684,7 +684,7 @@ final_subs3_model <- lm(y ~ ., data = model_data[train,])
 prediction <- predict(final_subs3_model, model_data[-train,])
 sqrt(mse(subs_day3[-train],prediction))
 ```
-```{r AIC selection subs_day7}
+```{r AIC selection subs_day7, eval=FALSE, include=FALSE}
 y <- subs_day7 %>% scale()
 
 reg_7 <- lm(formula = y ~ ., data = X_scale)
@@ -719,7 +719,7 @@ final_subs7_model <- lm(y ~ ., data = model_data[train,])
 prediction <- predict(final_subs7_model, model_data[-train,])
 sqrt(mse(subs_day7[-train],prediction))
 ```
-```{r AIC selection subs_day28}
+```{r AIC selection subs_day28, eval=FALSE, include=FALSE}
 y <- subs_day28 %>% scale()
 
 reg_28 <- lm(formula = y ~ ., data = X_scale)
