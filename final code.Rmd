@@ -117,7 +117,7 @@ day_0_variable <-
     "total_installs_day0",
     
     #include monthly subs day, yearly subs and otp on day Date
-    "subs_day0",
+    #"subs_day0",
     
     #number of monthly subscribers on day Date
     "total_monthly_day0",
@@ -201,6 +201,8 @@ outleyrs_plot <- data[(min(outlier) - 10):(max(outlier) + 10), c("Date", day_0_v
 
 data[outlier, -26] <-
   ((data[outlier - 7, -26] + data[outlier + 7, -26])/ 2)
+
+rm(outlier)
 ```
 
 
@@ -217,24 +219,18 @@ data$weekend <- ifelse(data$day %in% c(6, 7, 1) , 1, 0)
 data$lag_4 <- c(rep(0,4), data$subs_day3[-c(length(data$subs_day3) - 0:3)])
 data$lag_5 <- c(rep(0,5), data$subs_day3[-c(length(data$subs_day3) - 0:4)])
 data$lag_6 <- c(rep(0,6), data$subs_day3[-c(length(data$subs_day3) - 0:5)])
+data$lag_7 <- c(rep(0,7), data$subs_day3[-c(length(data$subs_day3) - 0:6)])
 
-data <- data[-c(1:6),]
+data <- data[-c(1:7),]
 
-rm(lag_4, lag_5, lag_6, outlier)
 
 explanatory_variable <-
   c(
     "lag_4",
     "lag_5",
     "lag_6",
-    "total_monthly_day0",
-    "total_yearly_day0",
-    "total_otp_day0",
-    "monthly_trials_day0",
-    "yearly_trials_day0",
-    "all_spend",
-    "auto_off_day0",
-    "total_installs_day0",
+    "lag_7",
+    day_0_variable,
     "weekend",
     "autumn"
   )
@@ -261,7 +257,7 @@ plot(decomposedRes)
 
 Now we would like to see which of our variable is the best way to explain the trend:
 ```{r}
-cor(y = decomposedRes$trend[which(!is.na(decomposedRes$trend))], x = data[which(!is.na(decomposedRes$trend)), c(day_0_variable)])
+cor(y = decomposedRes$trend[which(!is.na(decomposedRes$trend))], x = data[which(!is.na(decomposedRes$trend)), c(explanatory_variable)])
 
 data.frame(
   trend = decomposedRes$trend,
@@ -283,7 +279,7 @@ summary(lm(
 
 Now we would like to remove the seasonality part and try to explain the other part of sub day 3.
 ```{r}
-cor(y = decomposedRes$seasonal, x = data[, c(day_0_variable)])
+cor(y = decomposedRes$seasonal, x = data[, c(explanatory_variable)])
 
 cor(
   y = decomposedRes$seasonal,
@@ -335,19 +331,7 @@ sqrt(mse(subs_day3, lm$fitted.values))
 We try auto arima model on sub day 3, using ts, 1 day lag, and covariates:
 ```{r}
 #### TSGLM
-covariates <-
-    cbind(
-      total_monthly_day0,
-      total_yearly_day0,  
-      total_otp_day0, 
-      monthly_trials_day0, 
-      yearly_trials_day0,
-      all_spend,
-      auto_off_day0,
-      total_installs_day0#, 
-      #weekend,
-      #summer
-    )
+covariates <- as.matrix(data[,variable(day_0_variable, data)])
 
   
 
@@ -648,10 +632,10 @@ mixed_model <- glmnet(X, y, alpha = 0.5, lambda = mixed_cv$lambda.min)
 sqrt(mse(predict.glmnet(mixed_model, newx = X), subs_day3))
 
 ```
-```{r AIC selection subs_day3}
+```{r AIC selection subs_day3, fig.height=15, fig.width=20}
 X_scale <- data_interactions[,-1] %>% scale() %>% data.frame()
 y <- subs_day3 %>% scale()
-train <-which(allocation == "train")
+train <-which(allocation != "test")
 
 reg_3 <- lm(formula = y ~ ., data = X_scale)
 AIC_selection = stepAIC(reg_3, direction = "backward",trace=0)
@@ -673,12 +657,16 @@ best_3 <-
 summary(best_3)
 sqrt(mse(subs_day3, best_3$fitted.values))
 
-model_data <- data.frame(y = subs_day3, x = data_interactions[,coefficients_3])
+model_data <- data.frame(y = subs_day3,  data_interactions[,coefficients_3])
 
-for (i in 2:length(coefficients_3)) {
-  plot(y = subs_day3, x = model_data[,i])
-  print(names(model_data)[i])
-}
+cor <- cor(y = model_data$y, x = model_data)
+cor[order(cor),]
+
+model_data %>% melt(id = "y") %>%
+  ggplot(aes(x = value, y = y)) +
+  geom_point()+
+  facet_wrap(~variable, scale = "free")
+
 
 final_subs3_model <- lm(y ~ ., data = model_data[train,])
 prediction <- predict(final_subs3_model, model_data[-train,])
